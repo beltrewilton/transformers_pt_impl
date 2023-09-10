@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
+from typing import Any
 
 class BilingualDataset(Dataset):
 
@@ -13,14 +14,14 @@ class BilingualDataset(Dataset):
         self.seq_len = seq_len
         
         # start of sentences
-        self.sos_token = torch.Tensor(tokenizer_src.token_to_id(['[SOS]'], dtype=torch.int64))
-        self.eos_token = torch.Tensor(tokenizer_src.token_to_id(['[EOS]'], dtype=torch.int64))
-        self.pad_token = torch.Tensor(tokenizer_src.token_to_id(['[PAD]'], dtype=torch.int64))
+        self.sos_token = torch.tensor([tokenizer_tgt.token_to_id('[SOS][EOS]')], dtype=torch.int64)
+        self.eos_token = torch.tensor([tokenizer_tgt.token_to_id('[SOS][EOS]')], dtype=torch.int64)
+        self.pad_token = torch.tensor([tokenizer_tgt.token_to_id('[PAD]')], dtype=torch.int64)
 
     def __len__(self):
         return len(self.ds)
     
-    def __getitem__(self, index: Any) -> Any:
+    def __getitem__(self, index):
         src_target_pair = self.ds[index]
         src_text = src_target_pair['translation'][self.src_lang]
         tgt_text = src_target_pair['translation'][self.tgt_lang]

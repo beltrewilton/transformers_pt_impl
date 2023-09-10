@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, Dataloader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split
 from torch.utils.tensorboard import SummaryWriter
 
 from datasets import load_dataset
@@ -9,6 +9,7 @@ from tokenizers.models import WordLevel
 from tokenizers.trainers import WordLevelTrainer
 from tokenizers.pre_tokenizers import Whitespace
 
+import warnings
 from tqdm import tqdm
 
 from pathlib import Path
@@ -22,7 +23,7 @@ def get_all_sentences(ds, lang):
         yield item['translation'][lang]
 
 
-def get_or_buld_tokenizer(config, ds, lang):
+def get_or_build_tokenizer(config, ds, lang):
     # ex.  config['tokenizer_file] = '../tokenizer/tokenizer_{0}.json'
     tokenizer_path = Path(config['tokenizer_file'].format(lang))
     if not Path.exists(tokenizer_path):
@@ -39,8 +40,8 @@ def get_ds(config):
     ds_raw = load_dataset('opus_books', f'{config["lang_src"]}-{config["lang_tgt"]}', split='train')
 
     # Build tokenizer
-    tokenizer_src = get_or_buld_tokenizer(config, ds_raw, config['lang_src'])
-    tokenizer_tgt = get_or_buld_tokenizer(config, ds_raw, config['lang_tgt'])
+    tokenizer_src = get_or_build_tokenizer(config, ds_raw, config['lang_src'])
+    tokenizer_tgt = get_or_build_tokenizer(config, ds_raw, config['lang_tgt'])
 
     # Keep 90% for training and 10% for validation
     train_ds_size = int(0.9 * len(ds_raw))
@@ -63,8 +64,8 @@ def get_ds(config):
     print(f'Max length of source sentence: {max_len_src}')
     print(f'Max length of target sentence: {max_len_tgt}')
 
-    train_dataloader = Dataloader(train_ds, batch_size=config['batch_size'], shuffle=True)
-    val_dataloader = Dataloader(val_ds, batch_size=1, shuffle=True)
+    train_dataloader = DataLoader(train_ds, batch_size=config['batch_size'], shuffle=True)
+    val_dataloader = DataLoader(val_ds, batch_size=1, shuffle=True)
 
     return train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt
 
@@ -80,7 +81,7 @@ def train_model(config):
 
     Path(config['model_folder']).mkdir(parents=True, exist_ok=True)
 
-    train_dataloader, val_dataloader = tokenizer_src, tokenizer_tgt = get_ds(config)
+    train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt = get_ds(config)
     model = get_model(config, tokenizer_src.get_vocab_size(), tokenizer_tgt.get_vocab_size()).to(device)
 
     # Tensorboard
@@ -110,9 +111,39 @@ def train_model(config):
             decoder_mask  = batch['decoder_mask'].to(device) # (B, 1, seq_len, seq_len)
 
             # Run the tensors through the transformer
-            encoder_output = model.encode(encoder_input, encoder_mask)
-            decoder_output = model.decode(encoder_output, encoder_mask, decoder_input, decoder_mask)
+            encoder_output = model.encode(encoder_input, encoder_mask) # (B, seq_len, d_model)
+            decoder_output = model.decode(encoder_output, encoder_mask, decoder_input, decoder_mask) # (B, seq_len, d_model)
+            proj_output = model.project(decoder_output) # (B, seq_len, tgt_vocab_size)
+
+            label = batch['label'].to(device) # (B, seq_len)
+
+            # (B, seq_len, tgt_vocab_size) --> (B * seq_len, tgt_vocab_size)
+            loss = loss_fn(proj_output.view(-1, tokenizer_tgt.get_vocab_size()), label.view(-1))
+            batch_iterator.set_postfix({f"loss": f"{loss.item():6.3f}"})
+
+            # Log the loss
+            writer.add_scalar('train loss', loss.item(), global_step)
+            writer.flush()
+
+            # Backpropagate the model
+            loss.backward()
+
+            # Update weights
+            optimizer.step()
+            optimizer.zero_grad()
+
+            global_step += 1
+
+        model_filename = get_weights_file_path(config, f'{epoch:02d}')
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'global_step': global_step,
+        }, model_filename)
 
 
-
-
+if __name__ == "__main__":
+    warnings.filterwarnings('ignore')
+    config = get_config()
+    train_model(config)

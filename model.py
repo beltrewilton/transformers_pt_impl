@@ -23,7 +23,7 @@ class InputEmbeddings(nn.Module):
         Args:
             x (_type_): weights
         """
-        self.embedding(x) * math.sqrt(self.d_model)
+        return self.embedding(x) * math.sqrt(self.d_model)
 
 
 class PositionalEncoding(nn.Module):
@@ -98,6 +98,7 @@ class FeedForwardBlock(nn.Module):
             d_ff (int): Inner layer dimensionality 
             dropout (float): _description_
         """
+        super().__init__()
         self.linear_1 = nn.Linear(d_model, d_ff) # W1 and B1
         self.dropout = nn.Dropout(dropout)
         self.linear_2 = nn.Linear(d_ff, d_model) # W2 and B2
@@ -262,14 +263,14 @@ class ProjectionLayer(nn.Module):
 
 class Transformer(nn.Module):
 
-    def __init(self, encoder: Encoder, decoder: Decoder, src_embed: InputEmbeddings, 
+    def __init__(self, encoder: Encoder, decoder: Decoder, src_embed: InputEmbeddings, 
                tgt_embed: InputEmbeddings, src_pos: PositionalEncoding, tgt_pos: PositionalEncoding,
                  projection_layer: ProjectionLayer ) -> None:
         super().__init__()
         self.enconder = encoder
         self.decoder = decoder
         self.src_embed = src_embed
-        self.tg_embed = tgt_embed
+        self.tgt_embed = tgt_embed
         self.src_pos = src_pos
         self.tgt_pos = tgt_pos
         self.projection_layer = projection_layer
@@ -296,7 +297,7 @@ def build_transformer(src_vocab_size: int, tgt_vocab_size: int, src_seq_len: int
     tgt_embed = InputEmbeddings(d_model, tgt_vocab_size)
 
     # Create the positional encoding layers
-    src_pos = PositionalEncoding(d_model, tgt_seq_len, dropout)
+    src_pos = PositionalEncoding(d_model, src_seq_len, dropout)
     tgt_pos = PositionalEncoding(d_model, tgt_seq_len, dropout)
 
     # Create the encoder blocks
